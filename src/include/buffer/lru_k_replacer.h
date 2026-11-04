@@ -135,10 +135,25 @@ class LRUKReplacer {
  private:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  [[maybe_unused]] size_t current_timestamp_{0};
-  [[maybe_unused]] size_t curr_size_{0};
-  [[maybe_unused]] size_t replacer_size_;
-  [[maybe_unused]] size_t k_;
+  // 当前全局时间戳
+  size_t current_timestamp_{0};
+
+  // 当前允许淘汰的 Frame 数量
+  size_t curr_size_{0};
+
+  // Replacer 最大容量
+  size_t replacer_size_;
+
+  // LRU-K 中的 K 值
+  size_t k_;
+
+  // 保存每个 Frame 的访问历史
+  std::unordered_map<frame_id_t, std::list<size_t>> history_;
+
+  // 保存每个 Frame 是否允许淘汰
+  std::unordered_map<frame_id_t, bool> evictable_;
+
+  // 线程互斥锁
   std::mutex latch_;
 };
 
