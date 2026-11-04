@@ -139,6 +139,8 @@ class LRUKReplacer {
   [[maybe_unused]] size_t curr_size_{0};
   [[maybe_unused]] size_t replacer_size_;
   [[maybe_unused]] size_t k_;
+  std::unordered_map<frame_id_t, std::list<size_t>> history_;
+  std::unordered_map<frame_id_t, bool> evictable_;
   std::mutex latch_;
 };
 
