@@ -46,13 +46,130 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * { return 
 
 auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * { return nullptr; }
 
-auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool { return false; }
 
-auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool { return false; }
+auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
+  std::scoped_lock<std::mutex> lock(latch_);
 
-void BufferPoolManagerInstance::FlushAllPgsImp() {}
+  frame_id_t frame_id;
+  if (!page_table_->Find(page_id, frame_id)) {
+    return false;
+  }
 
-auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool { return false; }
+  Page *page = &pages_[frame_id];
+
+  if (page->pin_count_ <= 0) {
+    return false;
+  }
+
+  page->pin_count_--;
+
+  if (is_dirty) {
+    page->is_dirty_ = true;
+  }
+
+  if (page->pin_count_ == 0) {
+    replacer_->SetEvictable(frame_id, true);
+  }
+
+  return true;
+}
+
+
+
+
+auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
+  std::unique_lock<std::mutex> lock(latch_);
+
+  if (page_id == INVALID_PAGE_ID) {
+    return false;
+  }
+
+  frame_id_t frame_id;
+  if (!page_table_->Find(page_id, frame_id)) {
+    return false;
+  }
+
+  Page *page = &pages_[frame_id];
+
+  // 临时固定 Frame，防止 I/O 期间被淘汰
+  page->pin_count_++;
+  replacer_->SetEvictable(frame_id, false);
+
+  // 预先清除 Dirty，避免覆盖 I/O 期间产生的新脏标记
+  page->is_dirty_ = false;
+
+  lock.unlock();
+
+  // 使用页面读锁保护写盘时读取的数据
+  page->RLatch();
+  disk_manager_->WritePage(page_id, page->GetData());
+  page->RUnlatch();
+
+  // 恢复 Frame 的固定状态
+  lock.lock();
+
+  page->pin_count_--;
+
+  if (page->pin_count_ == 0) {
+    replacer_->SetEvictable(frame_id, true);
+  }
+
+  return true;
+}
+
+
+
+void BufferPoolManagerInstance::FlushAllPgsImp() {
+  for (size_t i = 0; i < pool_size_; i++) {
+    page_id_t page_id;
+
+    {
+      std::scoped_lock<std::mutex> lock(latch_);
+      page_id = pages_[i].GetPageId();
+    }
+
+    if (page_id != INVALID_PAGE_ID) {
+      FlushPgImp(page_id);
+    }
+  }
+}
+
+
+
+auto BufferPoolManagerInstance::DeletePgImp(page_id_t page_id) -> bool {
+  std::scoped_lock<std::mutex> lock(latch_);
+
+  frame_id_t frame_id;
+  if (!page_table_->Find(page_id, frame_id)) {
+    return true;
+  }
+
+  Page *page = &pages_[frame_id];
+
+  if (page->pin_count_ > 0) {
+    return false;
+  }
+
+  // A组：删除 Page ID 到 Frame ID 的映射
+  page_table_->Remove(page_id);
+
+  // B组：删除 Frame 的替换记录
+  replacer_->Remove(frame_id);
+
+  // 重置页面数据和元数据
+  page->ResetMemory();
+  page->page_id_ = INVALID_PAGE_ID;
+  page->pin_count_ = 0;
+  page->is_dirty_ = false;
+
+  // 回收 Frame
+  free_list_.push_back(frame_id);
+
+  DeallocatePage(page_id);
+
+  return true;
+}
+
 
 auto BufferPoolManagerInstance::AllocatePage() -> page_id_t { return next_page_id_++; }
 
