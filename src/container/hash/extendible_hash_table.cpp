@@ -22,7 +22,9 @@
 namespace bustub {
 
 template <typename K, typename V>
-ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size) : bucket_size_(bucket_size) {}
+ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size) : bucket_size_(bucket_size) {
+  dir_.push_back(std::make_shared<Bucket>(bucket_size_, 0));
+}
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::IndexOf(const K &key) -> size_t {
@@ -65,17 +67,63 @@ auto ExtendibleHashTable<K, V>::GetNumBucketsInternal() const -> int {
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Find(const K &key, V &value) -> bool {
-  UNREACHABLE("not implemented");
+  std::scoped_lock<std::mutex> lock(latch_);
+  return dir_[IndexOf(key)]->Find(key, value);
 }
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Remove(const K &key) -> bool {
-  UNREACHABLE("not implemented");
+  std::scoped_lock<std::mutex> lock(latch_);
+  return dir_[IndexOf(key)]->Remove(key);
 }
 
 template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
-  UNREACHABLE("not implemented");
+  std::scoped_lock<std::mutex> lock(latch_);
+
+  while (true) {
+    auto index = IndexOf(key);
+    auto bucket = dir_[index];
+
+    // 马可文的 Bucket::Insert 会更新已有 key；
+    // 只有“新 key 且桶已满”时才返回 false。
+    if (bucket->Insert(key, value)) {
+      return;
+    }
+
+    const int old_depth = bucket->GetDepth();
+
+    // 局部深度已经等于全局深度时，先把目录翻倍。
+    if (old_depth == global_depth_) {
+      const size_t old_size = dir_.size();
+      dir_.resize(old_size * 2);
+      for (size_t i = 0; i < old_size; ++i) {
+        dir_[i + old_size] = dir_[i];
+      }
+      ++global_depth_;
+    }
+
+    // 拆分位决定原桶的哪些目录入口指向新桶。
+    const size_t split_bit = size_t{1} << old_depth;
+    auto new_bucket = std::make_shared<Bucket>(bucket_size_, old_depth + 1);
+    bucket->IncrementDepth();
+
+    for (size_t i = 0; i < dir_.size(); ++i) {
+      if (dir_[i] == bucket && (i & split_bit) != 0U) {
+        dir_[i] = new_bucket;
+      }
+    }
+    ++num_buckets_;
+
+    // 从旧桶取出键值对，再按更新后的目录放回对应桶。
+    std::list<std::pair<K, V>> old_items;
+    old_items.splice(old_items.end(), bucket->GetItems());
+    for (const auto &item : old_items) {
+      dir_[IndexOf(item.first)]->Insert(item.first, item.second);
+    }
+
+    // 重新尝试插入新 key；必要时会继续拆分。
+  }
 }
 
 //===--------------------------------------------------------------------===//
