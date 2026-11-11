@@ -248,6 +248,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
       page->WUnlatch();
       throw;
     }
+
     page->WUnlatch();
   } catch (...) {
     // Restore victim bytes before reacquiring the BPM latch. This avoids
@@ -332,9 +333,8 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
     replacer_->SetEvictable(frame_id, true);
   }
   return true;
-}
 
-auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
+  auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
   if (page_id == INVALID_PAGE_ID) {
     return false;
   }
@@ -385,6 +385,7 @@ auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
 
   page->RUnlatch();
   return true;
+  }
 }
 
 void BufferPoolManagerInstance::FlushAllPgsImp() {
