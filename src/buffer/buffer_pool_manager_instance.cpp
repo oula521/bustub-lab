@@ -56,10 +56,6 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
 
   std::unique_lock<std::mutex> lock(latch_);
 
-  //加上这两行探针
-  std::cout << "DEBUG: free_list size = " << free_list_.size() << std::endl;
-  std::cout << "DEBUG: pool_size_ = " << pool_size_ << std::endl;
-
   frame_id_t frame_id;
   bool from_free_list = false;
   page_id_t old_page_id = INVALID_PAGE_ID;
