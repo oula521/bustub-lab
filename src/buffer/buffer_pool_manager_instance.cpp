@@ -49,7 +49,16 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
  * happens only after latch_ has been released.
  */
 auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
+
+  if (page_id == nullptr) {
+    return nullptr;
+  }
+
   std::unique_lock<std::mutex> lock(latch_);
+
+  //加上这两行探针
+  std::cout << "DEBUG: free_list size = " << free_list_.size() << std::endl;
+  std::cout << "DEBUG: pool_size_ = " << pool_size_ << std::endl;
 
   frame_id_t frame_id;
   bool from_free_list = false;
@@ -310,6 +319,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
   std::unique_lock<std::mutex> lock(latch_);
 
+
   while (pending_page_ids_.find(page_id) != pending_page_ids_.end()) {
     pending_cv_.wait(lock);
   }
@@ -333,7 +343,7 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
     replacer_->SetEvictable(frame_id, true);
   }
   return true;
-
+}
   auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
   if (page_id == INVALID_PAGE_ID) {
     return false;
@@ -385,7 +395,6 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
 
   page->RUnlatch();
   return true;
-  }
 }
 
 void BufferPoolManagerInstance::FlushAllPgsImp() {
