@@ -49,7 +49,6 @@ BufferPoolManagerInstance::~BufferPoolManagerInstance() {
  * happens only after latch_ has been released.
  */
 auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
-
   if (page_id == nullptr) {
     return nullptr;
   }
@@ -57,12 +56,10 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
   std::unique_lock<std::mutex> lock(latch_);
 
   frame_id_t frame_id;
-  bool from_free_list = false;
   page_id_t old_page_id = INVALID_PAGE_ID;
   bool old_page_dirty = false;
 
   if (!free_list_.empty()) {
-    from_free_list = true;
     frame_id = free_list_.front();
     free_list_.pop_front();
   } else {
@@ -88,7 +85,7 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
   }
 
   Page *page = &pages_[frame_id];
-  if (from_free_list) {
+  if (old_page_id == INVALID_PAGE_ID) {
     page->page_id_ = INVALID_PAGE_ID;
     page->pin_count_ = 1;
     page->is_dirty_ = false;
@@ -130,13 +127,8 @@ auto BufferPoolManagerInstance::NewPgImp(page_id_t *page_id) -> Page * {
       replacer_->SetEvictable(frame_id, true);
 
       pending_page_ids_.erase(old_page_id);
-    } else if (from_free_list) {
-      page->page_id_ = INVALID_PAGE_ID;
-      page->pin_count_ = 0;
-      page->is_dirty_ = false;
-      free_list_.push_back(frame_id);
     } else {
-      // Defensive recovery for an unexpected invalid page ID in a victim frame.
+      // Free-list reservation, or defensive recovery for an unexpected victim.
       page->page_id_ = INVALID_PAGE_ID;
       page->pin_count_ = 0;
       page->is_dirty_ = false;
@@ -315,7 +307,6 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
 auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> bool {
   std::unique_lock<std::mutex> lock(latch_);
 
-
   while (pending_page_ids_.find(page_id) != pending_page_ids_.end()) {
     pending_cv_.wait(lock);
   }
@@ -340,7 +331,8 @@ auto BufferPoolManagerInstance::UnpinPgImp(page_id_t page_id, bool is_dirty) -> 
   }
   return true;
 }
-  auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
+
+auto BufferPoolManagerInstance::FlushPgImp(page_id_t page_id) -> bool {
   if (page_id == INVALID_PAGE_ID) {
     return false;
   }

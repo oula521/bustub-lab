@@ -12,10 +12,9 @@
 
 #pragma once
 
-#include <condition_variable>
+#include <condition_variable>  // NOLINT
 #include <list>
 #include <mutex>  // NOLINT
-#include <unordered_map>
 #include <unordered_set>
 
 #include "buffer/buffer_pool_manager.h"

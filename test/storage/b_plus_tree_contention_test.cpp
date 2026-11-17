@@ -88,7 +88,7 @@ TEST(BPlusTreeTest, BPlusTreeContentionBenchmark) {  // NOLINT
     } else {
       time_ms_wo_mutex.push_back(dur.count());
     }
-    printf("Iter: %d\n", (int)iter);
+    printf("Iter: %d\n", static_cast<int>(iter));
   }
   std::cout << "This test will see how your B+ tree performance differs with and without contention." << std::endl;
   std::cout << "<<< BEGIN" << std::endl;
